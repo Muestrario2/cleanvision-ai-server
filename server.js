@@ -28,7 +28,7 @@ const PORT = 4000;
 const HISTORY_MAX = 25;
 const CONNECTION_TIMEOUT_MS = 3000; // si no llega un reporte en este tiempo, se considera "sin señal"
 
-const MODEL_DIR = path.join(__dirname, "..", "model");
+const MODEL_DIR = path.join(__dirname, "model");
 const PUBLIC_DIR = path.join(__dirname, "public");
 
 const app = express();
