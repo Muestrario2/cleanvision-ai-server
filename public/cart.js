@@ -2,8 +2,11 @@
 // CONFIGURACIÓN
 // ============================================================
 const MODEL_URL = "/model/"; // el mismo servidor sirve el modelo, sin CORS ni links externos
-const REPORT_INTERVAL_MS = 900; // cada cuánto se envía un reporte al servidor
-const JPEG_QUALITY = 0.6; // calidad de la foto enviada (más baja = más liviano y rápido)
+const REPORT_INTERVAL_MS = 1200; // cada cuánto se envía un reporte al servidor (subido de 900 a 1200 para dar más margen a la conexión)
+const JPEG_QUALITY = 0.45; // calidad de la foto enviada (más baja = más liviano y rápido)
+const SNAPSHOT_MAX_WIDTH = 320; // ancho máximo de la foto que se manda (no necesita ser HD)
+const CAMERA_WIDTH = 640; // resolución que le pedimos a la cámara (no a toda su capacidad)
+const CAMERA_HEIGHT = 480;
 
 // ============================================================
 
@@ -18,6 +21,7 @@ const lastConf = document.getElementById("lastConf");
 const sentCount = document.getElementById("sentCount");
 
 let model, running = false, sentTotal = 0;
+let sendInFlight = false; // evita amontonar envíos si la red va lenta
 
 async function listCameras() {
   // Pide permiso una vez para que el navegador muestre los nombres reales de cámara
@@ -47,7 +51,11 @@ async function listCameras() {
 
 async function startCamera(deviceId) {
   const stream = await navigator.mediaDevices.getUserMedia({
-    video: { deviceId: deviceId ? { exact: deviceId } : undefined },
+    video: {
+      deviceId: deviceId ? { exact: deviceId } : undefined,
+      width: { ideal: CAMERA_WIDTH },
+      height: { ideal: CAMERA_HEIGHT },
+    },
     audio: false,
   });
   video.srcObject = stream;
@@ -61,14 +69,23 @@ async function loadModel() {
 function captureFrameAsJPEG() {
   const w = video.videoWidth, h = video.videoHeight;
   if (!w || !h) return null;
-  canvas.width = w;
-  canvas.height = h;
+
+  // Reducimos a un ancho máximo fijo antes de comprimir — la foto que se ve
+  // en el panel no necesita ser del tamaño completo de la cámara.
+  const scale = Math.min(1, SNAPSHOT_MAX_WIDTH / w);
+  const outW = Math.round(w * scale);
+  const outH = Math.round(h * scale);
+
+  canvas.width = outW;
+  canvas.height = outH;
   const ctx = canvas.getContext("2d");
-  ctx.drawImage(video, 0, 0, w, h);
+  ctx.drawImage(video, 0, 0, outW, outH);
   return canvas.toDataURL("image/jpeg", JPEG_QUALITY);
 }
 
 async function sendReport(top, all, frameDataUrl) {
+  if (sendInFlight) return; // ya hay un envío en curso, no acumules otro
+  sendInFlight = true;
   try {
     await fetch("/report", {
       method: "POST",
@@ -86,6 +103,8 @@ async function sendReport(top, all, frameDataUrl) {
     setTimeout(() => (sendDot.className = ""), 200);
   } catch (err) {
     console.error("No se pudo enviar el reporte:", err);
+  } finally {
+    sendInFlight = false;
   }
 }
 
@@ -100,7 +119,7 @@ async function loop() {
   lastConf.textContent = top.confidence.toFixed(1) + "%";
 
   const frame = captureFrameAsJPEG();
-  await sendReport(top, all, frame);
+  sendReport(top, all, frame); // sin await: no bloquea el siguiente ciclo de predicción
 
   setTimeout(loop, REPORT_INTERVAL_MS);
 }
