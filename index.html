@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CleanVision AI — Monitor en vivo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #12161a; --panel: #1b2127; --panel-2: #202832; --line: #2b3440;
+    --text: #eef1f4; --text-dim: #8b96a3; --accent: #3fc6c0;
+    --ok: #4cc17e; --warn: #e0a83e; --bad: #e25c4f;
+    --ok-bg: #16261d; --warn-bg: #2a2216; --bad-bg: #2a1a18;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); font-family: 'Manrope', system-ui, sans-serif; min-height: 100vh; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 60px; }
+  header { display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding-bottom:20px; border-bottom:1px solid var(--line); margin-bottom:24px; flex-wrap:wrap; }
+  h1 { font-size: 22px; font-weight: 800; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  header p { margin: 4px 0 0; color: var(--text-dim); font-size: 14px; max-width: 50ch; }
+  #connBadge { font-family:'JetBrains Mono',monospace; font-size:12px; padding:5px 10px; border-radius:6px; border:1px solid var(--line); }
+  #connBadge.ok { color: var(--ok); border-color: var(--ok); }
+  #connBadge.bad { color: var(--bad); border-color: var(--bad); }
+
+  main { display:grid; grid-template-columns: 1.15fr 1fr; gap:22px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border:1px solid var(--line); border-radius:10px; padding:18px; }
+  .panel h2 { font-size:13px; color:var(--text-dim); margin:0 0 14px; font-weight:500; }
+  .panel h2 span.tag { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); }
+
+  #camWrap { position:relative; border-radius:8px; overflow:hidden; background:#000; aspect-ratio: 4/3; display:flex; align-items:center; justify-content:center; }
+  #liveFrame { width:100%; height:100%; object-fit:cover; display:block; }
+  #noSignal { position:absolute; inset:0; display:none; align-items:center; justify-content:center; background:#0d1013; color:var(--text-dim); font-size:13px; text-align:center; padding:20px; }
+
+  #statusBanner { margin-top:16px; border-radius:8px; padding:16px 18px; border:1px solid var(--line); background: var(--panel-2); transition: background .35s ease, border-color .35s ease; }
+  #statusBanner .label { font-size:12px; color:var(--text-dim); margin-bottom:4px; }
+  #statusBanner .value { font-family:'JetBrains Mono',monospace; font-size:21px; font-weight:700; }
+  #statusBanner.ok { background:var(--ok-bg); border-color:var(--ok); } #statusBanner.ok .value{color:var(--ok);}
+  #statusBanner.warn { background:var(--warn-bg); border-color:var(--warn); } #statusBanner.warn .value{color:var(--warn);}
+  #statusBanner.bad { background:var(--bad-bg); border-color:var(--bad); } #statusBanner.bad .value{color:var(--bad);}
+
+  .bar-row { margin-bottom:14px; } .bar-row:last-child{margin-bottom:0;}
+  .bar-head { display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+  .bar-head .p { font-family:'JetBrains Mono',monospace; color:var(--text-dim); }
+  .bar-track { height:8px; background:#0f1317; border-radius:5px; overflow:hidden; border:1px solid var(--line); }
+  .bar-fill { height:100%; border-radius:5px; transition:width .25s ease; }
+  .bar-fill.ok{background:var(--ok);} .bar-fill.warn{background:var(--warn);} .bar-fill.bad{background:var(--bad);}
+
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th { text-align:left; font-weight:500; color:var(--text-dim); border-bottom:1px solid var(--line); padding:6px 8px; }
+  td { padding:7px 8px; border-bottom:1px solid #202730; font-family:'JetBrains Mono',monospace; color:var(--text); }
+  tr:last-child td { border-bottom:none; }
+
+  .stat-grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:10px; margin-bottom:16px; }
+  .stat-box { background:var(--panel-2); border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .stat-box .n { font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; }
+  .stat-box .l { font-size:11px; color:var(--text-dim); margin-top:2px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Clean<span>Vision</span> AI — monitor en vivo</h1>
+      <p>Cámara a bordo del vehículo — la IA corre en el celular y reporta aquí en vivo.</p>
+    </div>
+    <div id="connBadge">conectando…</div>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>Cámara del vehículo</h2>
+      <div id="camWrap">
+        <img id="liveFrame" src="/frame.jpg" alt="video en vivo" />
+        <div id="noSignal">Sin señal todavía…<br/>Verifica que cart.html siga abierto y corriendo en el celular del vehículo.</div>
+      </div>
+      <div id="statusBanner">
+        <div class="label">Clasificación actual</div>
+        <div class="value" id="statusValue">Esperando datos…</div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Confianza por categoría (lectura actual)</h2>
+      <div id="bars"></div>
+
+      <h2 style="margin-top:22px;">Resumen de la sesión <span class="tag" id="sessionTime"></span></h2>
+      <div class="stat-grid">
+        <div class="stat-box"><div class="n" id="statTotal">0</div><div class="l">lecturas totales</div></div>
+        <div class="stat-box"><div class="n" id="statAvg">0%</div><div class="l">confianza promedio</div></div>
+        <div class="stat-box"><div class="n" id="statUptime">0:00</div><div class="l">tiempo en vivo</div></div>
+      </div>
+      <div id="sessionBars"></div>
+
+      <h2 style="margin-top:22px;">Historial de lecturas</h2>
+      <table>
+        <thead><tr><th>Hora</th><th>Categoría</th><th>Confianza</th></tr></thead>
+        <tbody id="logBody"><tr><td colspan="3" style="color:var(--text-dim);">Todavía no hay lecturas.</td></tr></tbody>
+      </table>
+    </section>
+  </main>
+</div>
+
+<script>
+const POLL_MS = 1200; // igual al ritmo de envío del celular — no tiene sentido pedir más seguido que eso
+
+const connBadge = document.getElementById("connBadge");
+const liveFrame = document.getElementById("liveFrame");
+const noSignal = document.getElementById("noSignal");
+const statusBanner = document.getElementById("statusBanner");
+const statusValue = document.getElementById("statusValue");
+const barsEl = document.getElementById("bars");
+const sessionBarsEl = document.getElementById("sessionBars");
+const logBody = document.getElementById("logBody");
+const statTotal = document.getElementById("statTotal");
+const statAvg = document.getElementById("statAvg");
+const statUptime = document.getElementById("statUptime");
+const sessionTime = document.getElementById("sessionTime");
+
+function tone(className) {
+  const n = className.toLowerCase();
+  if (n.includes("sin") || n.includes("limpi")) return "ok";
+  if (n.includes("moder")) return "warn";
+  return "bad";
+}
+function fmtUptime(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + ":" + String(s).padStart(2, "0");
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("/stats.json", { cache: "no-store" });
+    const data = await res.json();
+
+    connBadge.textContent = data.connected ? "celular conectado" : "sin señal del celular";
+    connBadge.className = data.connected ? "ok" : "bad";
+    noSignal.style.display = data.connected ? "none" : "flex";
+
+    if (data.top) {
+      const t = tone(data.top.className);
+      statusBanner.className = t;
+      statusValue.textContent = data.top.className + " — " + data.top.confidence.toFixed(1) + "%";
+    }
+
+    barsEl.innerHTML = (data.all || []).map((p) => {
+      const t = tone(p.className);
+      return `<div class="bar-row">
+        <div class="bar-head"><span>${p.className}</span><span class="p">${p.confidence.toFixed(1)}%</span></div>
+        <div class="bar-track"><div class="bar-fill ${t}" style="width:${p.confidence}%"></div></div>
+      </div>`;
+    }).join("");
+
+    const s = data.session || { totalReadings: 0, elapsedSec: 0, perClass: [] };
+    statTotal.textContent = s.totalReadings;
+    statUptime.textContent = fmtUptime(s.elapsedSec);
+    sessionTime.textContent = "· " + fmtUptime(s.elapsedSec) + " en vivo";
+    const avgAll = s.perClass.reduce((sum, c) => sum + c.avgConfidence * c.count, 0) / Math.max(1, s.totalReadings);
+    statAvg.textContent = (isFinite(avgAll) ? avgAll.toFixed(1) : "0") + "%";
+
+    sessionBarsEl.innerHTML = s.perClass.map((c) => {
+      const t = tone(c.className);
+      return `<div class="bar-row">
+        <div class="bar-head"><span>${c.className}</span><span class="p">${c.pctTime}% del tiempo (${c.count})</span></div>
+        <div class="bar-track"><div class="bar-fill ${t}" style="width:${c.pctTime}%"></div></div>
+      </div>`;
+    }).join("");
+
+    if (data.history && data.history.length) {
+      logBody.innerHTML = data.history.map((r) =>
+        `<tr><td>${r.time}</td><td>${r.className}</td><td>${r.confidence.toFixed(1)}%</td></tr>`
+      ).join("");
+    }
+  } catch (err) {
+    connBadge.textContent = "error de conexión";
+    connBadge.className = "bad";
+  }
+}
+function refreshFrame() { liveFrame.src = "/frame.jpg?t=" + Date.now(); }
+
+setInterval(refresh, POLL_MS);
+setInterval(refreshFrame, POLL_MS);
+refresh();
+refreshFrame();
+</script>
+</body>
+</html>
